@@ -1,15 +1,14 @@
 version: '3.7'
+
 networks:
   dspacenet:
-    ipam:
-      config:
-        # Define a custom subnet for our DSpace network, so that we can easily trust requests from host to container.
-        # If you customize this value, be sure to customize the 'proxies.trusted.ipranges' env variable below.
-        - subnet: 172.23.0.0/16
+    external: 
+      name: dspace_network
+
 services:
   # DSpace (backend) webapp container
   dspace:
-    container_name: dspace
+    container_name: unam_dspace
     environment:
       # Below syntax may look odd, but it is how to override dspace.cfg settings via env variables.
       # See https://github.com/DSpace/DSpace/blob/main/dspace/config/config-definition.xml
@@ -18,8 +17,8 @@ services:
       # dspace.dir: Must match with Dockerfile's DSPACE_INSTALL directory.
       dspace__P__dir: /dspace
       # Uncomment to set a non-default value for dspace.server.url or dspace.ui.url
-      # dspace__P__server__P__url: http://localhost:8080/server
-      # dspace__P__ui__P__url: http://localhost:4000
+      dspace__P__server__P__url: http://localhost:8080/server
+      dspace__P__ui__P__url: http://localhost:4000
       dspace__P__name: 'DSpace Started with Docker Compose'
       # db.url: Ensure we are using the 'dspacedb' image for our database
       db__P__url: 'jdbc:postgresql://dspacedb:5432/dspace'
@@ -29,10 +28,10 @@ services:
       # from the host machine. This IP range MUST correspond to the 'dspacenet' subnet defined above.
       proxies__P__trusted__P__ipranges: '172.23.0'
       LOGGING_CONFIG: /dspace/config/log4j2-container.xml
-    image: "${DOCKER_OWNER:-dspace}/dspace:${DSPACE_VER:-dspace-7_x-test}"
+    image: "unam/dspace:${DSPACE_VER:-dspace-7_x-test}"
     build:
       context: .
-      dockerfile: Dockerfile.test
+      dockerfile: Dockerfile
     depends_on:
     - dspacedb
     networks:
@@ -40,10 +39,6 @@ services:
     ports:
     - published: 8080
       target: 8080
-    - published: 8009
-      target: 8009
-    - published: 8000
-      target: 8000
     stdin_open: true
     tty: true
     volumes:
@@ -52,6 +47,7 @@ services:
     # Mount local [src]/dspace/config/ to container. This syncs your local configs with container
     # NOTE: Environment variables specified above will OVERRIDE any configs in local.cfg or dspace.cfg
     - ./dspace/config:/dspace/config
+    - solr_configs:/dspace/solr
     # Ensure that the database is ready BEFORE starting tomcat
     # 1. While a TCP connection to dspacedb port 5432 is not available, continue to sleep
     # 2. Then, run database migration to init database tables
@@ -63,11 +59,12 @@ services:
       while (!</dev/tcp/dspacedb/5432) > /dev/null 2>&1; do sleep 1; done;
       /dspace/bin/dspace database migrate
       catalina.sh run
+
   # DSpace PostgreSQL database container
   dspacedb:
-    container_name: dspacedb
+    container_name: unam_dspacedb
     # Uses a custom Postgres image with pgcrypto installed
-    image: "${DOCKER_OWNER:-dspace}/dspace-postgres-pgcrypto:${DSPACE_VER:-dspace-7_x}"
+    image: "unam/dspace-postgres-pgcrypto:${DSPACE_VER:-dspace-7_x}"
     build:
       # Must build out of subdirectory to have access to install script for pgcrypto
       context: ./dspace/src/main/docker/dspace-postgres-pgcrypto/
@@ -84,10 +81,11 @@ services:
     volumes:
     # Keep Postgres data directory between reboots
     - pgdata:/pgdata
+
   # DSpace Solr container
   dspacesolr:
-    container_name: dspacesolr
-    image: "${DOCKER_OWNER:-dspace}/dspace-solr:${DSPACE_VER:-dspace-7_x}"
+    container_name: unam_dspacesolr
+    image: "unam/dspace-solr:${DSPACE_VER:-dspace-7_x}"
     build:
       context: .
       dockerfile: ./dspace/src/main/docker/dspace-solr/Dockerfile
@@ -126,3 +124,4 @@ volumes:
   assetstore:
   pgdata:
   solr_data:
+  solr_configs:
